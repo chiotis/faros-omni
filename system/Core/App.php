@@ -7,6 +7,7 @@ namespace Omni\Core;
 use Omni\Controllers\ApiController;
 use Omni\Controllers\AuthController;
 use Omni\Controllers\SitesController;
+use Omni\Controllers\UpdatesController;
 use Omni\Models\Attempts;
 use Omni\Models\Owners;
 use Omni\Models\Settings;
@@ -22,6 +23,7 @@ final class App
     public Settings $settings;
     public Attempts $attempts;
     public SecretBox $secrets;
+    private ?Updater $updater = null;
 
     /** @param array<string, mixed> $config */
     public function __construct(public array $config)
@@ -59,6 +61,7 @@ final class App
         header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
         $this->startSession();
         date_default_timezone_set($this->settings->get('timezone', 'UTC') ?: 'UTC');
+        View::share('update_available', $this->updater()->knownUpdate());
 
         if ($method === 'POST' && !csrf_valid()) {
             http_response_code(403);
@@ -80,6 +83,11 @@ final class App
         $router->post('/sites/{id}/code', fn(string $id) => $sites->newCode((int)$id));
         $router->post('/sites/{id}/rename', fn(string $id) => $sites->rename((int)$id));
         $router->post('/sites/{id}/remove', fn(string $id) => $sites->remove((int)$id));
+        $updates = new UpdatesController($this);
+        $router->get('/updates', fn() => $updates->index());
+        $router->post('/updates/check', fn() => $updates->check());
+        $router->post('/updates/install', fn() => $updates->install());
+        $router->post('/updates/undo', fn() => $updates->undo());
         if (!$router->dispatch($method, $path)) {
             http_response_code(404);
             View::render('errors/message', ['title' => 'Not found', 'message' => 'There is nothing at this address.'], 'bare');
@@ -104,6 +112,46 @@ final class App
         session_regenerate_id(true);
         $_SESSION['owner_id'] = $ownerId;
         $this->owners->touchLogin($ownerId);
+    }
+
+    public function updater(): Updater
+    {
+        return $this->updater ??= new Updater(
+            ROOT_PATH,
+            STORAGE_PATH,
+            (string)$this->config['db_path'],
+            $this->settings,
+            (string)$this->config['release_url'],
+            [Updater::class, 'fetch'],
+            [Updater::class, 'downloadTo'],
+            fn(): array => $this->checkItself(),
+            (bool)$this->config['allow_local_release']
+        );
+    }
+
+    /**
+     * After an update: the code now in place answers the API and the sign-in page, in requests of their own, without a PHP error.
+     *
+     * @return array{ok: bool, error: string, reachable: bool}
+     */
+    private function checkItself(): array
+    {
+        $ping = Updater::fetch($this->baseUrl() . '/api/v1/ping', 15);
+        if ($ping['status'] === 0) {
+            return ['ok' => false, 'error' => 'Omni could not reach itself: ' . $ping['error'], 'reachable' => false];
+        }
+        $data = json_decode($ping['body'], true);
+        if ($ping['status'] !== 200 || !is_array($data) || ($data['omni'] ?? null) !== true) {
+            return ['ok' => false, 'error' => 'its API did not answer as Omni (HTTP ' . $ping['status'] . ')', 'reachable' => true];
+        }
+        $context = stream_context_create(['http' => ['timeout' => 15, 'ignore_errors' => true, 'follow_location' => 0]]);
+        $page = @file_get_contents($this->baseUrl() . '/login', false, $context);
+        $lines = function_exists('http_get_last_response_headers') ? (http_get_last_response_headers() ?? []) : (get_defined_vars()['http_response_header'] ?? []);
+        $status = preg_match('#^HTTP/\S+\s+(\d{3})#', (string)($lines[0] ?? ''), $m) ? (int)$m[1] : 0;
+        if (!in_array($status, [200, 303], true) || preg_match('/(Fatal error|Parse error|Uncaught )/', (string)$page)) {
+            return ['ok' => false, 'error' => 'the sign-in page answered HTTP ' . $status, 'reachable' => true];
+        }
+        return ['ok' => true, 'error' => '', 'reachable' => true];
     }
 
     public function isHttps(): bool

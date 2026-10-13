@@ -20,6 +20,9 @@ unset($_SESSION['flash']);
         Omni
       </a>
       <div class="flex items-center gap-3 text-sm">
+        <a href="/updates" class="relative rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100 hover:text-slate-900"<?= ($update_available ?? null) !== null ? ' title="Omni ' . e($update_available) . ' is available"' : '' ?>>
+          Updates<?php if (($update_available ?? null) !== null): ?><span class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-blue-500" aria-label="An update is available"></span><?php endif; ?>
+        </a>
         <span class="hidden text-slate-500 sm:inline"><?= e($owner['name'] ?? '') ?></span>
         <form method="post" action="/logout">
           <?= csrf_field() ?>

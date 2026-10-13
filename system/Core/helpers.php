@@ -92,3 +92,32 @@ function badge(string $label, string $tone = 'slate', string $title = ''): strin
     return '<span class="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ' . ($tones[$tone] ?? $tones['slate']) . '"'
         . ($title !== '' ? ' title="' . e($title) . '"' : '') . '>' . e($label) . '</span>';
 }
+
+/** Release notes (Markdown from CHANGELOG.md) as HTML: lists, nested by indent, **bold**, `code`; everything else is escaped. */
+function release_notes(string $markdown): string
+{
+    $inline = static fn(string $text): string => preg_replace(['/\*\*(.+?)\*\*/', '/`([^`]+)`/'], ['<strong>$1</strong>', '<code class="rounded bg-slate-100 px-1 text-xs">$1</code>'], e($text)) ?? e($text);
+    $html = '';
+    $depth = 0;
+    foreach (preg_split('/\R/', trim($markdown)) ?: [] as $line) {
+        if (trim($line) === '') {
+            continue;
+        }
+        if (preg_match('/^( *)[-*] (.*)$/', $line, $m)) {
+            $level = intdiv(strlen($m[1]), 2) + 1;
+            while ($depth < $level) {
+                $html .= '<ul class="' . ($depth === 0 ? 'list-disc space-y-1 pl-5' : 'mt-1 list-[circle] space-y-1 pl-5') . '">';
+                $depth++;
+            }
+            while ($depth > $level) {
+                $html .= '</ul>';
+                $depth--;
+            }
+            $html .= '<li>' . $inline($m[2]) . '</li>';
+        } else {
+            $html .= str_repeat('</ul>', $depth) . '<p class="mt-2">' . $inline(trim($line)) . '</p>';
+            $depth = 0;
+        }
+    }
+    return $html . str_repeat('</ul>', $depth);
+}

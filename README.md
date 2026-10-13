@@ -33,11 +33,12 @@ php -S 127.0.0.1:8121 -t public public/index.php
 | Folder | |
 |---|---|
 | `public/` | The only folder the web serves: `index.php`, the compiled CSS, the JavaScript, the icon |
-| `system/Core/` | The app, router, database and its tables, views, signatures, connection codes, sealed secrets |
+| `system/Core/` | The app, router, database and its tables, views, signatures, connection codes, sealed secrets, the updater |
 | `system/Models/` | The owner, the sites (codes, reports, nonces), attempts (rate limits), settings, and `SiteHealth` (what the owner is shown about a site) |
 | `system/Controllers/` | Setup and sign-in, the owner's screens, the API |
 | `system/Views/` | Plain PHP views |
-| `storage/` | The database and the key (not in git) |
+| `storage/` | The database, the key and the update work folders (not in git) |
+| `scripts/build-release.php` | Builds the release package and `release.json` |
 
 ### The API
 
@@ -66,6 +67,29 @@ A site the owner removed is told so with `410`.
 - **Connection codes.** Only their hash is kept.
 - **What a site sends.** It is shown escaped. Addresses become links only when they are http(s).
 
+## Updates
+
+**Updates** (in the header) shows the version installed and the latest release on GitHub, with its notes. Omni looks for a new one at most every 12 hours, and the header marks it when there is one.
+
+**Install** replaces the code, and only the code. `storage/` (the database, the key) is never in a package and never touched, so no backup is needed first. The steps:
+
+1. Download the package of the release and check its size and SHA-256 against `release.json`.
+2. Unpack it beside the live code (`storage/updates/`). A package may hold only `system/`, `public/assets/`, `public/index.php`, `public/.htaccess`, `.htaccess`, `VERSION`, `CHANGELOG.md` and `README.md`; anything else, a link, or a path that climbs out stops the update before anything changes.
+3. Copy the database. The copy is used only if step 5 fails after the new code has changed the database.
+4. Swap the code folders in with renames, keeping the old ones.
+5. Ask the new code whether it works: its API and its sign-in page, in requests of their own. If it does not, the old code goes back by itself, and the database too if it was changed (on the next request).
+
+**Undo** puts back the code the last update replaced (not the database, which has been used since). The old code of the last two updates is kept.
+
+The folder Omni runs from, `system/` and `public/` must be writable by PHP for this. Where they are not, update with `git pull` or by uploading the files, as before. Either way, never upload `storage/`.
+
+### Publishing a release
+
+1. Raise `VERSION` and add its entry at the top of `CHANGELOG.md` (`## 0.1.2 — date — title`).
+2. Push to `main`.
+
+The Release workflow (`.github/workflows/release.yml`) then runs the tests, tags the version, and attaches `omni-<version>.zip` and `release.json` to the GitHub Release (built by `scripts/build-release.php`, the same bytes for the same version). Every Omni finds it at `https://github.com/chiotis/faros-omni/releases/latest/download/release.json`.
+
 ## Styles
 
 Tailwind CSS 3.4, compiled into `public/assets/css/app.css` (committed, so the server needs nothing). After changing classes in a view:
@@ -83,6 +107,11 @@ tests/run.sh
 
 - `tests/unit.php` covers signatures, codes, sealed secrets, the sites model, rate limits and `SiteHealth`.
 - `tests/http.php` starts PHP's own server with a storage folder of its own and goes through setup, sign-in, adding a site, the whole API with every refusal, and the screens.
+- `tests/update.php` updates a copy of Omni from releases published to a local stand-in for GitHub:
+  - a good release: install, undo, install again;
+  - one that breaks Omni after changing its database: taken back, database included;
+  - one whose package does not match its SHA-256;
+  - one that tries to write into `storage/`.
 
 To look at the screens with sample data:
 
