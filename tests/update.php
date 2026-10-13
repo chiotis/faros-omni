@@ -50,7 +50,9 @@ register_shutdown_function(static function () use ($servers, $tmp): void {
     foreach ($servers as $s) { proc_terminate($s); proc_close($s); }
     exec('rm -rf ' . escapeshellarg($tmp));
 });
-for ($i = 0; $i < 50 && @file_get_contents("$base/api/v1/ping") === false; $i++) { usleep(100000); }
+// Both servers must answer before the test starts (on a slow machine the second one takes a moment).
+file_put_contents("$rel/ready.txt", 'ok');
+for ($i = 0; $i < 100 && (@file_get_contents("$base/api/v1/ping") === false || @file_get_contents("http://127.0.0.1:$relPort/ready.txt") === false); $i++) { usleep(100000); }
 
 /**
  * Publishes a release: a copy of this Omni at the given version, changed by $change, built with the real build script.
