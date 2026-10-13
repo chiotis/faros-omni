@@ -1,0 +1,7 @@
+/node_modules/
+/storage/db/*
+!/storage/db/.gitkeep
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/key
+.DS_Store

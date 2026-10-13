@@ -1,0 +1,11 @@
+{
+  "name": "faros-omni",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i resources/app.tailwind.css -o public/assets/css/app.css --minify",
+    "watch:css": "tailwindcss -c tailwind.config.js -i resources/app.tailwind.css -o public/assets/css/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.19"
+  }
+}

@@ -1,0 +1,3 @@
+# When the web server's document root cannot be set to public/, send everything there.
+RewriteEngine On
+RewriteRule ^(.*)$ public/$1 [L]
