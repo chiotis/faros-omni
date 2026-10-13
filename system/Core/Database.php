@@ -15,6 +15,7 @@ final class Database
         if (!is_dir($dir)) {
             mkdir($dir, 0775, true);
         }
+        self::restoreIfScheduled($path);
         $pdo = new PDO('sqlite:' . $path);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
@@ -23,6 +24,29 @@ final class Database
         $pdo->exec('PRAGMA busy_timeout = 5000');
         self::migrate($pdo);
         return $pdo;
+    }
+
+    /**
+     * An update that was taken back after its code had changed the database leaves the copy made before it; the next
+     * request puts it back before anything opens the database (the request that took the update back still had it open).
+     */
+    public static function scheduleRestore(string $path, string $copy): void
+    {
+        file_put_contents($path . '.restore', $copy);
+    }
+
+    private static function restoreIfScheduled(string $path): void
+    {
+        if (!is_file($path . '.restore')) {
+            return;
+        }
+        $copy = trim((string)file_get_contents($path . '.restore'));
+        if ($copy !== '' && is_file($copy)) {
+            @unlink($path . '-wal');
+            @unlink($path . '-shm');
+            copy($copy, $path . '.tmp') && rename($path . '.tmp', $path);
+        }
+        @unlink($path . '.restore');
     }
 
     private static function migrate(PDO $pdo): void

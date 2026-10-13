@@ -20,6 +20,8 @@ final class SitesController
     public function index(): void
     {
         $owner = $this->app->requireOwner();
+        // Looks for a new version of Omni at most every 12 hours (the header shows it from the next page).
+        $this->app->updater()->status();
         $now = time();
         $every = (int)$this->app->config['report_every'];
         $rows = [];

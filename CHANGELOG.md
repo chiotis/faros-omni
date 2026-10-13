@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1 — 2026-10-13 — Updates from Omni itself
+- **Updates in the header.** The version installed, the latest release on GitHub with its notes, **Check now**, **Install** and **Undo**. Omni looks for a new version at most every 12 hours, and the header marks one with a dot.
+- **Install replaces only the code.** `storage/` (the database, the key) is never in a package and never touched, so no backup is needed first. The steps:
+  - download the package and check its size and SHA-256 against `release.json`;
+  - unpack it beside the live code, refusing anything outside the code (`storage/`, other folders, links, paths that climb out);
+  - swap the code in with renames;
+  - ask the new code whether it works (its API and sign-in page).
+  - If it does not work, the old code goes back by itself, and the database too if the new code had changed it.
+- **Undo** puts back the code of the last update. The old code of the last two updates is kept.
+- **Releases** are published by a GitHub workflow when `VERSION` changes. It runs the tests and attaches `omni-<version>.zip` and `release.json` (the version, lowest PHP, SHA-256, size and these notes), built by `scripts/build-release.php`.
+- **Tests:** `tests/update.php` updates a copy of Omni from releases on a local stand-in for GitHub: install, undo, a broken release taken back with its database, a package that does not match, one that writes into `storage/`. The unit tests cover what a package may hold, which `release.json` is accepted, the notes, and that a release always builds to the same bytes.
+- **0.1.0 has no updater**, so this version goes in once by hand (`git pull`, or upload `system/`, `public/` and the files at the root, never `storage/`). Every later version installs from the Updates screen.
+
 ## 0.1.0 — 2026-10-13 — The first Omni
 - **Setup.** The first visit asks for the owner's account (name, email, password of at least 12 characters, time zone) and closes once it exists. It is the only account.
 - **Sign-in.** Limited to 8 failures per address in 15 minutes. Sign-out ends the session.

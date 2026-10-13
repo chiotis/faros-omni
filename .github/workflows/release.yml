@@ -1,0 +1,44 @@
+name: Release
+
+# When VERSION changes on main, tag it (v0.2.0) and publish a GitHub Release with that version's CHANGELOG entry and the
+# package an Omni installs from its Updates screen: omni-<version>.zip (the code only) and release.json (its version,
+# lowest PHP, SHA-256, size and notes).
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: zip, sodium, pdo_sqlite
+          coverage: none
+
+      - name: Run the tests
+        run: tests/run.sh
+
+      - name: Publish the release for this version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(head -n1 VERSION | tr -d '[:space:]')"
+          tag="v${version}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            awk -v v="$version" '$0 ~ ("^## " v "( |$)") {p=1; next} /^## / {p=0} p' CHANGELOG.md > notes.md
+            if [ ! -s notes.md ]; then echo "See [CHANGELOG.md](CHANGELOG.md)." > notes.md; fi
+            gh release create "$tag" --target "$GITHUB_SHA" --title "Omni ${version}" --notes-file notes.md
+          fi
+          # The package and its manifest; run again to replace them.
+          php scripts/build-release.php build --repo="$GITHUB_REPOSITORY"
+          gh release upload "$tag" "build/omni-${version}.zip" build/release.json --clobber

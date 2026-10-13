@@ -5,3 +5,4 @@
 !/storage/logs/.gitkeep
 /storage/key
 .DS_Store
+/build/

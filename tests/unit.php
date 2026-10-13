@@ -141,6 +141,33 @@ check('connected but no report yet', SiteHealth::of(['status' => 'connected', 'c
 $h = SiteHealth::of($row($report(['analytics' => ['enabled' => false, 'mode' => 'off'], 'backups' => ['scheduled' => false, 'last' => null, 'last_success_at' => null]])), $now, 21600);
 check('no tracking, no backups', [$h['chips']['analytics']['label'], $h['chips']['backup']['label'], $h['state']], ['Off', 'Off', 'ok']);
 
+// ---- updates
+use Omni\Core\Updater;
+use Omni\Models\Settings;
+check('a package may hold the code', [Updater::allowedPath('system/Core/App.php'), Updater::allowedPath('public/assets/css/app.css'), Updater::allowedPath('public/index.php'), Updater::allowedPath('VERSION')], [true, true, true, true]);
+check('and nothing else: data, other folders, climbing out, absolute or Windows paths', [Updater::allowedPath('storage/key'), Updater::allowedPath('storage/db/omni.sqlite'), Updater::allowedPath('tests/unit.php'), Updater::allowedPath('system/../storage/key'), Updater::allowedPath('/system/x.php'), Updater::allowedPath('system\\x.php'), Updater::allowedPath('public/x.php'), Updater::allowedPath('')], [false, false, false, false, false, false, false, false]);
+$updater = new Updater(ROOT_PATH, STORAGE_PATH, STORAGE_PATH . '/db/omni.sqlite', new Settings($db), 'https://example.test/release.json', fn() => [], fn() => [], fn() => []);
+$good = ['version' => '0.2.0', 'min_php' => '8.1', 'package_url' => 'https://github.com/chiotis/faros-omni/releases/download/v0.2.0/omni-0.2.0.zip', 'sha256' => str_repeat('a', 64), 'size' => 40000, 'notes' => '- x'];
+check('a valid release.json', $updater->validateManifest($good)['version'] ?? null, '0.2.0');
+check('refused: no https, a bad hash, a size out of bounds, a version that is not one', [
+    $updater->validateManifest(['package_url' => 'http://github.com/x.zip'] + $good), $updater->validateManifest(['sha256' => 'abc'] + $good),
+    $updater->validateManifest(['size' => 0] + $good), $updater->validateManifest(['size' => 999999999] + $good), $updater->validateManifest(['version' => 'latest'] + $good), $updater->validateManifest('nope'),
+], [null, null, null, null, null, null]);
+check('http to this machine only when tests allow it', [(new Updater(ROOT_PATH, STORAGE_PATH, '', new Settings($db), '', fn() => [], fn() => [], fn() => [], true))->validateManifest(['package_url' => 'http://127.0.0.1:9/x.zip'] + $good)['package_url'] ?? null, $updater->validateManifest(['package_url' => 'http://127.0.0.1:9/x.zip'] + $good)], ['http://127.0.0.1:9/x.zip', null]);
+$notes = release_notes("- **Bold** and `code` <script>\n  - nested\n- back\nA line.");
+check('release notes: lists, nesting, bold, code; HTML escaped', [substr_count($notes, '<ul'), substr_count($notes, '</ul>'), str_contains($notes, '<strong>Bold</strong>'), str_contains($notes, '&lt;script&gt;'), str_contains($notes, '<p class="mt-2">A line.</p>')], [2, 2, true, true, true]);
+$build = static function (string $out): string { exec('php ' . escapeshellarg(ROOT_PATH . '/scripts/build-release.php') . ' ' . escapeshellarg($out) . ' 2>&1'); return (string)@file_get_contents($out . '/release.json'); };
+$one = json_decode($build(STORAGE_PATH . '/b1'), true);
+$two = json_decode($build(STORAGE_PATH . '/b2'), true);
+check('the release builds to the same bytes every time', [$one['sha256'] ?? '', isset($one['sha256'])], [$two['sha256'] ?? '-', true]);
+$zip = new ZipArchive();
+$zip->open(STORAGE_PATH . '/b1/' . $one['package']);
+$names = [];
+for ($i = 0; $i < $zip->numFiles; $i++) { $names[] = $zip->getNameIndex($i); }
+check('the package holds only what an update may write, and what it must', [array_values(array_filter($names, fn($n) => !Updater::allowedPath($n))), in_array('system/Core/Updater.php', $names, true), in_array('VERSION', $names, true)], [[], true, true]);
+check('its manifest is one Omni accepts', $updater->validateManifest($one)['version'] ?? null, trim((string)file_get_contents(ROOT_PATH . '/VERSION')));
+exec('rm -rf ' . escapeshellarg(STORAGE_PATH . '/b1') . ' ' . escapeshellarg(STORAGE_PATH . '/b2'));
+
 // ---- helpers
 check('sizes', [bytes(0), bytes(1536), bytes(300 * 1048576), bytes(null)], ['0 B', '1.5 KB', '300 MB', '—']);
 check('ago', [ago(gmdate('c', $now - 30), $now), ago(gmdate('c', $now - 7200), $now), ago(null, $now)], ['just now', '2 h ago', 'never']);
