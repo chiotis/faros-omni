@@ -144,12 +144,9 @@ final class App
         if ($ping['status'] !== 200 || !is_array($data) || ($data['omni'] ?? null) !== true) {
             return ['ok' => false, 'error' => 'its API did not answer as Omni (HTTP ' . $ping['status'] . ')', 'reachable' => true];
         }
-        $context = stream_context_create(['http' => ['timeout' => 15, 'ignore_errors' => true, 'follow_location' => 0]]);
-        $page = @file_get_contents($this->baseUrl() . '/login', false, $context);
-        $lines = function_exists('http_get_last_response_headers') ? (http_get_last_response_headers() ?? []) : (get_defined_vars()['http_response_header'] ?? []);
-        $status = preg_match('#^HTTP/\S+\s+(\d{3})#', (string)($lines[0] ?? ''), $m) ? (int)$m[1] : 0;
-        if (!in_array($status, [200, 303], true) || preg_match('/(Fatal error|Parse error|Uncaught )/', (string)$page)) {
-            return ['ok' => false, 'error' => 'the sign-in page answered HTTP ' . $status, 'reachable' => true];
+        $login = Updater::fetch($this->baseUrl() . '/login', 15, false);
+        if (!in_array($login['status'], [200, 303], true) || preg_match('/(Fatal error|Parse error|Uncaught )/', $login['body'])) {
+            return ['ok' => false, 'error' => 'the sign-in page answered HTTP ' . $login['status'], 'reachable' => true];
         }
         return ['ok' => true, 'error' => '', 'reachable' => true];
     }

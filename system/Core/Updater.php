@@ -458,23 +458,33 @@ final class Updater
 
     // ---- HTTP with PHP's streams (no cURL needed), for the App to pass in.
 
-    /** @return array{status: int, body: string, error: string} */
-    public static function fetch(string $url, int $timeout): array
+    /**
+     * A GET with PHP's streams (no cURL needed). The status comes from the stream's own metadata, which every PHP version
+     * fills (the $http_response_header variable is only set where the code names it, and is deprecated from PHP 8.5).
+     *
+     * @return array{status: int, body: string, error: string}
+     */
+    public static function fetch(string $url, int $timeout, bool $follow = true): array
     {
-        $context = stream_context_create(['http' => ['timeout' => $timeout, 'ignore_errors' => true, 'follow_location' => 1, 'max_redirects' => 5, 'header' => "User-Agent: Omni updater\r\nAccept: application/json"]]);
+        $context = stream_context_create(['http' => ['timeout' => $timeout, 'ignore_errors' => true, 'follow_location' => $follow ? 1 : 0, 'max_redirects' => 5, 'header' => "User-Agent: Omni updater\r\nAccept: application/json"]]);
         $error = '';
         set_error_handler(static function (int $no, string $message) use (&$error): bool {
             $error = preg_replace('/^.*?\):\s*/', '', $message) ?? $message;
             return true;
         });
         try {
-            $body = file_get_contents($url, false, $context, 0, 262144);
+            $stream = fopen($url, 'rb', false, $context);
+            $body = $stream !== false ? stream_get_contents($stream, 262144) : false;
+            $lines = $stream !== false ? (array)(stream_get_meta_data($stream)['wrapper_data'] ?? []) : [];
+            if ($stream !== false) {
+                fclose($stream);
+            }
         } finally {
             restore_error_handler();
         }
-        $lines = function_exists('http_get_last_response_headers') ? (http_get_last_response_headers() ?? []) : (get_defined_vars()['http_response_header'] ?? []);
         $status = 0;
         foreach ($lines as $line) {
+            // After a redirect the last status line is the one that counts.
             if (preg_match('#^HTTP/\S+\s+(\d{3})#', (string)$line, $m)) {
                 $status = (int)$m[1];
             }
